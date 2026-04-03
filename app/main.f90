@@ -1,6 +1,11 @@
 program main
-  use iterative_linear_system, only: say_hello
+  use precision_mod
+  use iterative_linear_system
   implicit none
+  real(dp), allocatable :: A(:, :), B(:)
+  integer :: n
+  call read_linear_system("data.dat", A, B, n) 
+  print *, A
+  print *, is_diagonally_dominant(A)
 
-  call say_hello()
 end program main
