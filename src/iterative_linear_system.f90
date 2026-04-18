@@ -81,37 +81,36 @@ contains
 
   function jacoby_solve(A, B) result(X)
     real(dp), intent(in) :: A(:, :), B(:)
-    real(dp), allocatable :: X(:), Xk(:)
-    real(dp), allocatable :: D(:), Z(:,:), G(:)
+    real(dp), allocatable :: X(:), X_new(:)
+    real(dp), allocatable :: invD(:), Z(:,:), G(:)
     integer :: n, i, j
     
     if (.not. is_diagonally_dominant(A)) then
     print *, "WARDING: Not diagonally dominant matrix!"
     end if
     n = size(B)
-    allocate(D(n))
-    allocate(G(n))
-    allocate(Z(n,n))
-    do i = 1, n ! TODO: vectorize!
-      D(i) = A(i,i)
-    end do 
-    G = B/D
+    allocate(invD(n), G(n), Z(n,n))
+    invD = 1.0_dp / [(A(i,i), i = 1, n)]
+    G = B * invD
     X = G
-    do i = 1, n ! TODO: vectorize!
+    ! !$omp parallel do collapse(2) private(i, j) shared(A, invD, Z, G)
+    do i = 1, n
       do j = 1, n
-      if (i == j) then
-       Z(i, j) = 0.0_dp
-      else
-        Z(i, j) = -1.0_dp/D(i) * A(i,j)
-      end if
+        if (i == j) then
+        Z(i, j) = 0.0_dp
+        else
+          Z(i, j) = -invD(i) * A(i,j)
+        end if
       end do
     end do
+    ! !$omp end parallel do
+
     do i = 1, max_iter
-      Xk = matmul(Z, X) + G
-      if (norm2(Xk - X) < eps) then
+      X_new = matmul(Z, X) + G
+      if (norm2(X_new - X) < eps) then
         return
       end if
-      X = Xk
+      X = X_new
     end do
     print *, "Ineration limit has been reached"
   end function jacoby_solve
@@ -120,6 +119,6 @@ contains
     real(dp), intent(in) :: A(:, :), B(:), X(:)
     real(dp) :: r ! модуль вектора невязки
 
-    r = sqrt(sum((matmul(A, X) - B)**2))
+    r = norm2(matmul(A, X) - B)
   end function residual
 end module iterative_linear_system
