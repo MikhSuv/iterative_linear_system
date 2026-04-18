@@ -1,6 +1,6 @@
 FC = gfortran
 # FC = flang
-FFLAGS = -O3 -march=native #-fopenmp
+FFLAGS = -O3 -march=native -fopenmp
 
 SRCDIR = src
 APPDIR = app

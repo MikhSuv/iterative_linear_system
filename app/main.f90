@@ -7,7 +7,7 @@ program main
 
   character(len=256):: arg
   real(dp), allocatable :: A(:, :), B(:), X(:)
-  integer :: n, argc
+  integer :: n
 
   if (command_argument_count() < 1) then
     error stop "Usage: ./iterative_slover <jacobi|seidel|relaxation>"
