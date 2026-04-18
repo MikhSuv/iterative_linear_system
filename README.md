@@ -6,7 +6,7 @@
 
 Использование:
 ```bash
-./linear_solver <jacobi|seidel|relaxation>
+./iterative_slover <jacobi|seidel|relaxation>
 ```
 Аргумент должен принимать одно из трех значений: `jacobi`, `seidel` или `relaxation`
 для решения методом Якоби, методом Зейделя и методом релаксации соответственно.
