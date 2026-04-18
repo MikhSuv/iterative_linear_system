@@ -1,9 +1,9 @@
 module iterative_linear_system
-  use precision_mod
-  implicit none
-  ! private
-  integer, PARAMETER :: max_iter = 100000000
-  ! public :: say_hello
+   use precision_mod
+   implicit none
+    private
+   integer, PARAMETER :: max_iter = 100000000
+    public :: read_linear_system, write_result, iterative_solve, residual
 contains
    subroutine read_linear_system(filename, A, B, n)
       character(len=*), intent(in) :: filename
@@ -64,61 +64,155 @@ contains
       close (ounit)
 
    end subroutine write_result
-  function is_diagonally_dominant(A) result(check)
-    ! Проверяет, обладает ли матрица A диагоняльным преобладанием
-    real(dp), intent(in) :: A(:, :) ! Матрица
-    real(dp), allocatable :: diag_vals(:), row_summs(:)
-    logical :: check
-    integer :: n, i
-    check = .false.
-    n = size(A(:,1))
+   function is_diagonally_dominant(A) result(check)
+      ! Проверяет, обладает ли матрица A диагоняльным преобладанием
+      real(dp), intent(in) :: A(:, :) ! Матрица
+      real(dp), allocatable :: diag_vals(:), row_summs(:)
+      logical :: check
+      integer :: n, i
+      check = .false.
+      n = size(A(:, 1))
 
-    allocate(diag_vals(n), row_summs(n))
-    diag_vals = [(abs(A(i,i)), i = 1, n)]
-    row_summs = sum(abs(A), dim=2) - diag_vals
-    check = all(diag_vals > row_summs)
-  end function is_diagonally_dominant
+      allocate (diag_vals(n), row_summs(n))
+      diag_vals = [(abs(A(i, i)), i=1, n)]
+      row_summs = sum(abs(A), dim=2) - diag_vals
+      check = all(diag_vals > row_summs)
+   end function is_diagonally_dominant
 
-  function jacoby_solve(A, B) result(X)
-    real(dp), intent(in) :: A(:, :), B(:)
-    real(dp), allocatable :: X(:), X_new(:)
-    real(dp), allocatable :: invD(:), Z(:,:), G(:)
-    integer :: n, i, j
-    
-    if (.not. is_diagonally_dominant(A)) then
-    print *, "WARDING: Not diagonally dominant matrix!"
-    end if
-    n = size(B)
-    allocate(invD(n), G(n), Z(n,n))
-    invD = 1.0_dp / [(A(i,i), i = 1, n)]
-    G = B * invD
-    X = G
-    ! !$omp parallel do collapse(2) private(i, j) shared(A, invD, Z, G)
-    do i = 1, n
-      do j = 1, n
-        if (i == j) then
-        Z(i, j) = 0.0_dp
-        else
-          Z(i, j) = -invD(i) * A(i,j)
-        end if
-      end do
-    end do
-    ! !$omp end parallel do
+   function iterative_solve(A, B, method) result(X)
+      character(len=*), intent(in) :: method
+      real(dp), intent(in) :: A(:, :), B(:)
+      real(dp), allocatable :: X(:)
 
-    do i = 1, max_iter
-      X_new = matmul(Z, X) + G
-      if (norm2(X_new - X) < eps) then
-        return
+      select case (method)
+      case ("jacobi")
+         X = jacobi_solve(A, B)
+      case ("seidel")
+         X = seidel_solve(A, B)
+      case ("relaxation")
+         X = relaxation_solve(A, B)
+      case default
+         error stop "Invalid method parameter"
+      end select
+
+   end function iterative_solve
+
+   function jacobi_solve(A, B) result(X)
+      real(dp), intent(in) :: A(:, :), B(:)
+      real(dp), allocatable :: X(:), X_new(:)
+      real(dp), allocatable :: invD(:), Z(:, :), G(:)
+      integer :: n, i
+
+      if (.not. is_diagonally_dominant(A)) then
+         print *, "WARDING: Not diagonally dominant matrix!"
       end if
-      X = X_new
-    end do
-    print *, "Ineration limit has been reached"
-  end function jacoby_solve
+      n = size(B)
+      allocate (invD(n), G(n), Z(n, n))
+      ! Обратная диагональ
+      invD = 1.0_dp/[(A(i, i), i=1, n)]
+      G = B*invD
+      ! Начальное приближение
+      X = G
 
-  function residual(A, B, X) result(r)
-    real(dp), intent(in) :: A(:, :), B(:), X(:)
-    real(dp) :: r ! модуль вектора невязки
+      Z = A
+      !$omp parallel do private(i) shared(A, invD, Z)
+      do i = 1, n
+         Z(i, :) = -invD(i)*A(i, :)
+      end do
+      !$omp end parallel do
+      forall (i=1:n) Z(i, i) = 0.0_dp
 
-    r = norm2(matmul(A, X) - B)
-  end function residual
+      do i = 1, max_iter
+         X_new = matmul(Z, X) + G
+         if (norm2(X_new - X) < eps) then
+            return
+         end if
+         X = X_new
+      end do
+      print *, "Ineration limit has been reached"
+   end function jacobi_solve
+
+   function seidel_solve(A, B) result(X)
+      real(dp), intent(in) :: A(:, :), B(:)
+      real(dp), allocatable :: X(:), X_new(:)
+      real(dp), allocatable :: invD(:), Q(:), P(:, :)
+      integer :: n, i
+
+      if (.not. is_diagonally_dominant(A)) then
+         print *, "WARDING: Not diagonally dominant matrix!"
+      end if
+      n = size(B)
+      allocate (invD(n), Q(n), P(n, n), X_new(n))
+      ! Обратная диагональ
+      invD = 1.0_dp/[(A(i, i), i=1, n)]
+      P = A
+      !$omp parallel do private(i) shared(A, invD, P)
+      do i = 1, n
+         P(i, :) = -invD(i)*A(i, :)
+      end do
+      !$omp end parallel do
+      forall (i=1:n) P(i, i) = 0.0_dp
+
+      Q = B*invD
+      X = Q
+
+      do i = 1, max_iter
+         X_new = matmul(P, X) + Q
+         if (norm2(X_new - X) < eps) then
+            return
+         end if
+         X = X_new
+      end do
+      print *, "Ineration limit has been reached"
+   end function seidel_solve
+
+   function relaxation_solve(A, B) result(X)
+      real(dp), intent(in) :: A(:, :), B(:)
+      real(dp), allocatable :: X(:)
+      real(dp), allocatable :: invD(:), Q(:), P(:, :)
+      integer :: n, i, j
+
+      if (.not. is_diagonally_dominant(A)) then
+         print *, "WARDING: Not diagonally dominant matrix!"
+      end if
+
+      n = size(B)
+      allocate (invD(n), Q(n), P(n, n))
+
+      ! Обратная диагональ
+      invD = 1.0_dp/[(A(i, i), i=1, n)]
+      P = A
+      !$omp parallel do private(i) shared(A, invD, P)
+      do i = 1, n
+         P(i, :) = -invD(i)*A(i, :)
+      end do
+      !$omp end parallel do
+      forall (i=1:n) P(i, i) = 0.0_dp
+
+      Q = B*invD
+      allocate (X(n))
+      ! Начальное приближение
+      X = 0.0_dp
+
+      do i = 1, max_iter
+         j = maxloc(abs(Q), dim = 1)
+
+         if (abs(Q(j)) < eps) then
+            return
+         end if
+
+         X(j) = X(j) + Q(j)
+         Q = Q + P(:, j)*Q(j)
+         Q(j) = 0.0_dp
+      end do
+
+      print *, "Ineration limit has been reached"
+   end function relaxation_solve
+
+   function residual(A, B, X) result(r)
+      real(dp), intent(in) :: A(:, :), B(:), X(:)
+      real(dp) :: r ! модуль вектора невязки
+
+      r = norm2(matmul(A, X) - B)
+   end function residual
 end module iterative_linear_system
