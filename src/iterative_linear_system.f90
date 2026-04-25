@@ -134,18 +134,18 @@ contains
 
    function seidel_solve(A, B) result(X)
       real(dp), intent(in) :: A(:, :), B(:)
-      real(dp), allocatable :: X(:), X_new(:)
+      real(dp), allocatable :: X(:), X_old(:)
       real(dp), allocatable :: invD(:), Q(:), P(:, :)
-      integer :: n, i
+      integer :: n, i, j
 
       if (.not. is_diagonally_dominant(A)) then
          print *, "WARDING: Not diagonally dominant matrix!"
       end if
+
       n = size(B)
-      allocate (invD(n), Q(n), P(n, n), X_new(n))
+      allocate (invD(n), Q(n), P(n, n), X_old(n))
       ! Обратная диагональ
       invD = 1.0_dp/[(A(i, i), i=1, n)]
-      P = A
       !$omp parallel do private(i) shared(A, invD, P)
       do i = 1, n
          P(i, :) = -invD(i)*A(i, :)
@@ -153,15 +153,17 @@ contains
       !$omp end parallel do
       forall (i=1:n) P(i, i) = 0.0_dp
 
-      Q = B*invD
+      Q = B * invD
       X = Q
 
-      do i = 1, max_iter
-         X_new = matmul(P, X) + Q
-         if (norm2(X_new - X) < eps) then
-            return
-         end if
-         X = X_new
+      do j = 1, max_iter
+         X_old = X 
+         do i = 1, n
+         X(i) = dot_product(P(i, 1:i-1), X(1:i-1)) &
+           + dot_product(P(i, i+1:n), X_old(i+1:n)) &
+           + Q(i)
+         end do
+         if (norm2(X_old - X) < eps) return
       end do
       print *, "Ineration limit has been reached"
    end function seidel_solve
